@@ -1,0 +1,160 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: ankane/pgvector:latest
+    container_name: vidrag_postgres
+    restart: always
+    environment:
+      POSTGRES_USER: vidrag
+      POSTGRES_PASSWORD: vidrag
+      POSTGRES_DB: vidrag
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vidrag"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    container_name: vidrag_redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  ingestion:
+    build: ../services/ingestion
+    container_name: vidrag_ingestion
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001   # ✅ FIXED PORT
+    ports:
+      - "8001:8001"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - HF_TOKEN=${HF_TOKEN}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ../services/ingestion/data:/app/data
+      - ./cookies.txt:/app/cookies.txt
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:8001/docs || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+
+  processing_api:
+    build: ../services/processing
+    container_name: vidrag_processing_api
+    command: uvicorn main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "8002:8002"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8002/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  processing_worker:
+    build: ../services/processing
+    container_name: vidrag_worker
+    command: celery -A worker.celery worker --loglevel=info
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+      - REDIS_URL=redis://redis:6379
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+
+  search:
+    build: ../services/search
+    container_name: vidrag_search
+    command: uvicorn main:app --host 0.0.0.0 --port 8003
+    ports:
+      - "8003:8003"
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    env_file:
+      - .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8003/docs')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 60s   # 🔥 IMPORTANT (ML model loading)
+
+  gateway:
+    build: ../services/gateway
+    container_name: vidrag_gateway
+    command: uvicorn main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "8000:8000"
+    depends_on:
+      ingestion:
+        condition: service_healthy
+      search:
+        condition: service_started
+      processing_api:
+        condition: service_started
+      redis:
+        condition: service_started
+
+
+  qa:
+    build: ../services/qa
+    container_name: vidrag_qa
+    ports:
+    - "8004:8004"
+
+    environment:
+      - SEARCH_URL=http://search:8003/search
+      - REDIS_HOST=redis
+      - LLM_URL=http://host.docker.internal:8080/completion
+      - CONTEXT_LIMIT=3
+      - TOP_K=5
+
+    depends_on:
+      - search
+      - redis
+
+    restart: always
+
+volumes:
+  pgdata:
+  faiss_data:

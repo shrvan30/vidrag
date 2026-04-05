@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+yt-dlp
+psycopg2-binary
+python-dotenv
+youtube-transcript-api
+websockets
+sentence-transformers

@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+celery
+redis
+openai-whisper
+sentence-transformers
+faiss-cpu
+rank-bm25
+nltk
+psycopg2-binary

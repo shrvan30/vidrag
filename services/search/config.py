@@ -1,0 +1,6 @@
+# config.py
+TOP_K = 10
+FINAL_K = 5
+
+FAISS_WEIGHT = 0.65
+BM25_WEIGHT = 0.35

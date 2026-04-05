@@ -1,6 +1,8 @@
 version: "3.9"
 
 services:
+
+  # ------------------ DATABASE ------------------
   postgres:
     image: ankane/pgvector:latest
     container_name: vidrag_postgres
@@ -20,9 +22,11 @@ services:
       timeout: 5s
       retries: 5
 
+  # ------------------ REDIS ------------------
   redis:
     image: redis:7
     container_name: vidrag_redis
+    restart: always
     ports:
       - "6379:6379"
     healthcheck:
@@ -31,17 +35,20 @@ services:
       timeout: 3s
       retries: 5
 
+  # ------------------ INGESTION ------------------
   ingestion:
-    build: ../services/ingestion
+    build:
+      context: ../services/ingestion
     container_name: vidrag_ingestion
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8001   # ✅ FIXED PORT
+    restart: always
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
     ports:
       - "8001:8001"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - HF_TOKEN=${HF_TOKEN}
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      HF_TOKEN: ${HF_TOKEN}
     depends_on:
       postgres:
         condition: service_healthy
@@ -57,17 +64,20 @@ services:
       retries: 5
       start_period: 40s
 
+  # ------------------ PROCESSING API ------------------
   processing_api:
-    build: ../services/processing
+    build:
+      context: ../services/processing
     container_name: vidrag_processing_api
+    restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8002
     ports:
       - "8002:8002"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -76,21 +86,24 @@ services:
     volumes:
       - ./data:/app/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8002/docs')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8002/docs || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
       start_period: 30s
 
+  # ------------------ PROCESSING WORKER ------------------
   processing_worker:
-    build: ../services/processing
+    build:
+      context: ../services/processing
     container_name: vidrag_worker
+    restart: always
     command: celery -A worker.celery worker --loglevel=info
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - REDIS_URL=redis://redis:6379
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      REDIS_URL: redis://redis:6379
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,62 +112,76 @@ services:
     volumes:
       - ./data:/app/data
 
+  # ------------------ SEARCH ------------------
   search:
-    build: ../services/search
+    build:
+      context: ../services/search
     container_name: vidrag_search
+    restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8003
     ports:
       - "8003:8003"
-    environment:
-      - DATABASE_URL=${DATABASE_URL}
     env_file:
       - .env
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
     depends_on:
       postgres:
         condition: service_healthy
+    volumes:
+      - faiss_data:/app/faiss_data   # 🔥 persistent vector store
     healthcheck:
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:8003/docs')"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8003/docs || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 60s   # 🔥 IMPORTANT (ML model loading)
+      start_period: 60s
 
+  # ------------------ GATEWAY ------------------
   gateway:
-    build: ../services/gateway
+    build:
+      context: ../services/gateway
     container_name: vidrag_gateway
+    restart: always
     command: uvicorn main:app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     depends_on:
       ingestion:
         condition: service_healthy
       search:
-        condition: service_started
+        condition: service_healthy
       processing_api:
         condition: service_started
       redis:
         condition: service_started
 
-
+  # ------------------ QA (RAG) ------------------
   qa:
-    build: ../services/qa
+    build:
+      context: ../services/qa
     container_name: vidrag_qa
-    ports:
-    - "8004:8004"
-
-    environment:
-      - SEARCH_URL=http://search:8003/search
-      - REDIS_HOST=redis
-      - LLM_URL=http://host.docker.internal:8080/completion
-      - CONTEXT_LIMIT=3
-      - TOP_K=5
-
-    depends_on:
-      - search
-      - redis
-
     restart: always
+    command: uvicorn main:app --host 0.0.0.0 --port 8004
+    ports:
+      - "8004:8004"
+    env_file:
+      - .env
+    environment:
+      SEARCH_URL: http://search:8003/search
+      REDIS_HOST: redis
+      LLM_URL: http://host.docker.internal:8080/completion
+      CONTEXT_LIMIT: 3
+      TOP_K: 5
+    depends_on:
+      search:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
 
+# ------------------ VOLUMES ------------------
 volumes:
   pgdata:
   faiss_data:

@@ -83,6 +83,35 @@ User → Gateway → Ingestion → Processing → Search → QA → Frontend
 
 ---
 
+##  Demo
+
+###  Demo 1 — Video Q&A using RAG
+
+![Demo 1](docs/images/demo_1.png)
+
+This demo shows how VidRAG enables **question answering directly from video content**.
+
+* User inputs a query related to the video
+* System retrieves relevant transcript chunks
+* LLM generates context-aware answer
+* Response is grounded in video content
+
+---
+
+###  Demo 2 — Semantic Search & Firebase Key Detection
+
+![Demo 2](docs/images/demo_2.png)
+
+This demo highlights **hybrid semantic search with timestamp navigation**.
+
+* FAISS + BM25 retrieves relevant segments
+* Detects technical keywords like *Firebase*, *private key*
+* Displays exact timestamps for quick navigation
+* Generates quick insights from retrieved context
+
+---
+
+
 ##  Quick Start
 
 ```bash

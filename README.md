@@ -87,7 +87,7 @@ User → Gateway → Ingestion → Processing → Search → QA → Frontend
 
 ###  Demo 1 — Video Q&A using RAG
 
-![Demo 1](docs/images/demo_1.png)
+![Demo 1](https://raw.githubusercontent.com/shrvan30/vidrag/main/docs/images/Demo_1.png)
 
 This demo shows how VidRAG enables **question answering directly from video content**.
 
@@ -100,7 +100,7 @@ This demo shows how VidRAG enables **question answering directly from video cont
 
 ###  Demo 2 — Semantic Search & Firebase Key Detection
 
-![Demo 2](docs/images/demo_2.png)
+![Demo 2](https://raw.githubusercontent.com/shrvan30/vidrag/main/docs/images/Demo_2.png)
 
 This demo highlights **hybrid semantic search with timestamp navigation**.
 
